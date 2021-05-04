@@ -1,7 +1,11 @@
 var locX = 0.0;
 var locY = 0.0;
-var scale = 0.315;
+locX = 1.6861733;
+locY = 0.0;
 
+var scale = 0.315;
+//      0000006.866455078124999e-7
+scale = 0.0000006866;
 var canvas = document.querySelector('#glcanvas');
 var mouseDown = false;
 var mouseX = 0, mouseY = 0;
@@ -25,7 +29,7 @@ function main() {
   // Vertex shader program
 
   const vsSource = `
-    // precision highp float;
+    precision highp float;
     
     attribute vec4 aVertexPosition;
 
@@ -211,10 +215,11 @@ function main() {
 
     //Hmm this way of breaking up numbers isn't really right
     //Needs a string to double representation routine
-    vec4 offset = vec4(-1.749958,1e-6 - 6.837060935e-7, 2.787937e-18,0.65633794e-24);
+    // vec4 offset = vec4(-1.749958,1e-6 - 6.837060935e-7, 2.787937e-18,0.65633794e-24);
+    vec4 offset = vec4(0.0, 0.0, 0.0, 0.0);
     //vec4 offset = vec4(-1.4011551,8.90989198e-8, 0.0,0.0);
 
-    const int max_iterations = 1500;
+    const int max_iterations = 1500; //1500
     const int max_colors = 50;
     const float color_scale = 2.0;
     const float inverse_max_colors = 1.0 / float(max_colors);
@@ -256,16 +261,13 @@ function main() {
         vec2 Threshold = set(threshold);
         float iTime = 1.0;
         vec2 iResolution = vec2(1280, 960);
-        // float scaletemp= (scaleF / exp(iTime * 0.2));
-        float scaletemp = scale;
-        // c.x = 1.3333 * (pos.x - 0.5) * scale - center.x;
-        // c.y = (pos.y - 0.5) * scale - center.y;
+
         vec4 c = vec4(
-            set((fragCoord.x) * 3.5*scaletemp - center.x),
-            set((fragCoord.y) * 2.0*scaletemp - center.y)
+            set((fragCoord.x / iResolution.x) * 3.5*scale - center.x),
+            set((fragCoord.y / iResolution.y) * 2.0*scale - center.y)
         );
 
-        c = dcSub(dcAdd(c,offset),vec4(set(2.5*scaletemp),set(scaletemp)));
+        c = dcSub(dcAdd(c,offset),vec4(set(2.5*scale),set(scale)));
 
         vec4 z = vec4(0.0, 0.0, 0.0, 0.0);
         int final_i;
@@ -282,39 +284,23 @@ function main() {
     }
 
     void main() {
-        gl_FragColor.xyz = double_fractal(pos.xy + vec2(0.0,0.0));
-        // gl_FragColor.xyz += double_fractal(pos.xy + vec2(0.5,0.0));
-        // gl_FragColor.xyz += double_fractal(pos.xy + vec2(0.0,0.5));
-        // gl_FragColor.xyz += double_fractal(pos.xy + vec2(0.5,0.5));
+        vec2 iResolution = vec2(1280, 960);
+        vec2 pixelPos = pos.xy * iResolution;
+
+        gl_FragColor.xyz  = double_fractal( pixelPos + vec2(0,0) );
+        // gl_FragColor.xyz += double_fractal( pixelPos + vec2(.5,.0) );
+        // gl_FragColor.xyz += double_fractal( pixelPos + vec2(.0,.5) );
+        // gl_FragColor.xyz += double_fractal( pixelPos + vec2(.5,.5) );
         // gl_FragColor.xyz /= 4.0;
-        // gl_FragColor.w = 1.0;
+        gl_FragColor.w = 1.0;
+        // vec3 s1 = double_fractal(pos.xy + scale * vec2(0.5, 0.0));
+        // vec3 s2 = double_fractal(pos.xy + scale * vec2(0.0, 0.5));
+        // vec3 s3 = double_fractal(pos.xy + scale * vec2(0.5, 0.0));
+        // vec3 s4 = double_fractal(pos.xy + scale * vec2(0.0, 0.5));
+        // vec3 avg = (s1 + s2 + s3 + s4) / 4.0;
+        // gl_FragColor = vec4(avg, 1.0);
+        // gl_FragColor = vec4(double_fractal(pos.xy), 1.0);
     }
-    // void main2() {
-    //     vec2 z, c;
-        
-    //     // vec2 p = vec2(0.0, 0.0);
-    //     // float s = 1.0;
-
-    //     c.x = 1.3333 * (pos.x - 0.5) * scale - center.x;
-    //     c.y = (pos.y - 0.5) * scale - center.y;
-
-    //     z = c;
-    //     const int iter = 100;
-    //     int j = 0;
-    //     for(int i = 0; i < iter; i++) {
-    //         float x = (z.x * z.x - z.y * z.y) + c.x;
-    //         float y = (z.y * z.x + z.x * z.y) + c.y;
-    
-    //         if((x * x + y * y) > 4.0) break;
-    //         z.x = x;
-    //         z.y = y;
-    //         j++;
-    //     }
-    
-    //     float t = (j == 2 ? 0.0 : float(j)) / 100.0;
-    //     // gl_FragColor = vec4(t, t, t, 1.0);
-    //     gl_FragColor = map_to_color(float(j)/float(iter));
-    // }
   `;
 
   // Initialize a shader program; this is where all the lighting
