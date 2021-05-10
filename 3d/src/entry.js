@@ -36,8 +36,10 @@ const fragShader = `
     #define PI 3.1415925359
     #define TWO_PI 6.2831852
     #define MAX_STEPS 500
-    #define MAX_DIST 100.
-    #define SURFACE_DIST .01
+    #define MAX_DIST 1.
+    #define SURFACE_DIST .001
+
+    #define AA_QUALITY 2
 
     float Power;
 
@@ -95,19 +97,6 @@ const fragShader = `
         return result;
     }
 
-    float RayMarch(vec3 ro, vec3 rd) 
-    {
-        float dO = 0.; //Distane Origin
-        for(int i=0;i<MAX_STEPS;i++)
-        {
-            vec3 p = ro + rd * dO;
-            float ds = DE_infinite_sphere(p); // ds is Distance Scene
-            dO += ds;
-            if(dO > MAX_DIST || ds < SURFACE_DIST) break;
-        }
-        return dO;
-    }
-
     float sdSphere(vec3 p, float r)
     {
         return length(p) - r;
@@ -153,7 +142,7 @@ const fragShader = `
         vec3 z = pos;
         float dr = 1.0;
         float r = 0.0;
-        for (int i = 0; i < 25; i++) {
+        for (int i = 0; i < 10; i++) {
           r = length(z);
           if (r > 1.5) break;
           
@@ -173,16 +162,130 @@ const fragShader = `
         }
         return 0.5*log(r)*r/dr;
     }
+    
+    float length6( vec3 p )
+    {
+      p = p*p*p; p = p*p;
+      return pow( p.x + p.y + p.z, 1.0/6.0 );
+    }
+
+    void pR(inout vec2 p, float a) {
+      p = cos(a)*p + sin(a)*vec2(p.y, -p.x);
+    }
+
+    float DE_tree(vec3 p)
+    {
+        const int iterations = 20;
+      
+        float d = time*5. - p.z;
+        p=p.yxz;
+        pR(p.yz, 1.570795);
+        p.x += 6.5;
+
+        p.yz = mod(abs(p.yz)-.0, 20.) - 10.;
+        float scale = 1.25;
+        
+        p.xy /= (1.+d*d*0.0005);
+        
+        float l = 0.;
+      
+        for (int i=0; i<iterations; i++) {
+          p.xy = abs(p.xy);
+          p = p*scale + vec3(-3. + d*0.0095,-1.5,-.5);
+              
+          pR(p.xy,0.35-d*0.015);
+          pR(p.yz,0.5+d*0.02);
+          
+          l =length6(p);
+        }
+        return l*pow(scale, -float(iterations))-.15;
+    }
+    
+    #define SCALE 2.8
+    #define MINRAD2 .25
+    float minRad2 = clamp(MINRAD2, 1.0e-9, 1.0);
+    #define scale (vec4(SCALE, SCALE, SCALE, abs(SCALE)) / minRad2)
+    float absScalem1 = abs(SCALE - 1.0);
+    float AbsScaleRaisedTo1mIters = pow(abs(SCALE), float(1-10));
+
+    float DE_mandelbox(vec3 pos) 
+    {
+      vec4 p = vec4(pos,1);
+      vec4 p0 = p;  // p.w is the distance estimate
+
+      for (int i = 0; i < 9; i++)
+      {
+        p.xyz = clamp(p.xyz, -1.0, 1.0) * 2.0 - p.xyz;
+
+        float r2 = dot(p.xyz, p.xyz);
+        p *= clamp(max(minRad2/r2, minRad2), 0.0, 1.0);
+
+        // scale, translate
+        p = p*scale + p0;
+      }
+      return ((length(p.xyz) - absScalem1) / p.w - AbsScaleRaisedTo1mIters);
+    }
+
+    float DE_sphereWorld( vec3 p, float s )
+    {
+      float S = 1.0;
+
+      vec4 orb = vec4(1000.0); 
+      
+      for( int i=0; i<8;i++ )
+      {
+        p = -1.0 + 2.0*fract(0.5*p+0.5);
+
+        float r2 = dot(p,p);
+        
+        orb = min( orb, vec4(abs(p),r2) );
+        
+        float k = s/r2;
+        p     *= k;
+        S *= k;
+      }
+      
+      return 0.25*abs(p.y)/S;
+    }
+
+    float DE_pyramid(vec3 pt) {
+        float r;
+        float offset = 1.;
+        float S = 2.;
+        pt.y -= 2.5;
+        int n = 0;
+        while(n < 15) {
+            if(pt.x + pt.y < 0.) pt.xy = -pt.yx;
+            if(pt.x + pt.z < 0.) pt.xz = -pt.zx;
+            if(pt.y + pt.z < 0.) pt.zy = -pt.yz;
+            pt = pt * S - offset*(S - 1.0);
+            n++;
+        }
+        
+        return (length(pt) * pow(S, -float(n)));
+    }
 
     float sdf(vec3 pos)
-    {
+    {   
+        float t = 0.;
         // float t = sdSphere(pos-vec3(0.0, 0.0, 10.0), 3.0);
-        // float t = distance(mod(pos, 2.), vec3(1,1,1))-.54321;
-        // float t = DE_mandelbulb(pos);
-        float t = SDF_difference(
-          SDF_menger(pos, 4), 
-          DE_mandelbulb(pos)
-        );
+        //float t = distance(mod(pos, 2.), vec3(1,1,1))-.25;
+        // float t = DE_mandelbox(pos);
+        // float t = DE_pyramid(pos);
+        // float t = DE_sphereWorld(pos, 1.);
+        // float t = SDF_menger(pos,5);
+        //float t = DE_mandelbulb(pos);
+        // float t = DE_tree(pos);
+        // float t = SDF_difference(
+        //     SDF_menger(pos, 4),
+        //     DE_mandelbulb(pos)
+        //   );
+        // t = SDF_intersect(t, SDF_menger(pos, 4));
+        // float t = SDF_intersect(SDF_menger(pos, 4), distance(mod(pos, 2.), vec3(1,1,1))-.9 * sin(time/5.));
+        // float t = SDF_difference(
+        //   SDF_menger(pos, 4), 
+        //   DE_mandelbulb(pos)
+        // );
         return t;
     }
 
@@ -193,7 +296,7 @@ const fragShader = `
         for (int i = 0; i < MAX_STEPS; i++)
         {
             float res = sdf(rayOrigin + rayDir * t);
-            if (res < (0.0001*t))
+            if (res < (SURFACE_DIST*t))
             {
                 return t;
             }
@@ -216,7 +319,7 @@ const fragShader = `
     {
         vec3 col;
         float t = castRay(rayOrigin, rayDir);
-    
+        vec3 L = normalize(vec3(sin(time)*0.5, cos(time*0.5)+0.5, -0.5));
         if (t == -1.0)
         {
             // Skybox colour
@@ -224,36 +327,96 @@ const fragShader = `
         }
         else
         {
+            vec3 pos = rayOrigin + rayDir * t;
+            vec3 N = calcNormal(pos);
+    
             vec3 objectSurfaceColour = vec3(0.4, 0.8, 0.1);
-            vec3 ambient = vec3(0.02, 0.021, 0.02);
-            col = ambient * objectSurfaceColour;
-
-            col = calcNormal(rayOrigin + rayDir * t) * vec3(0.5) + vec3(0.5);
+            // L is vector from surface point to light, N is surface normal. N and L must be normalized!
+            float NoL = max(dot(N, L), 0.0);
+            vec3 LDirectional = vec3(1.80,1.27,0.99) * NoL;
+            vec3 LAmbient = vec3(0.03, 0.04, 0.1);
+            vec3 diffuse = objectSurfaceColour * (LDirectional + LAmbient);
+        
+            col = diffuse;
             
-            // float NoL = max(dot(N, L), 0.0);
-            // vec3 LDirectional = vec3(0.9, 0.9, 0.8) * NoL;
-            // vec3 LAmbient = vec3(0.03, 0.04, 0.1);
-            // vec3 diffuse = col * (LDirectional + LAmbient);
+            
+            float shadow = 0.0;
+            vec3 shadowRayOrigin = pos + N * 0.01;
+            vec3 shadowRayDir = L;
+            float t = castRay(shadowRayOrigin, shadowRayDir);
+            if (t >= -1.0)
+            {
+                shadow = 1.0;
+            }
+            col = mix(col, col*0.8, shadow);
         }
         
         return col;
     }
 
+    vec3 CameraPath( float t )
+    {
+      vec3 p = vec3(-.78 + 3. * sin(2.14*t),.05+2.5 * sin(.942*t+1.3),.05 + 3.5 * cos(3.594*t) );
+      return p;
+    } 
+
+    vec4 getSceneColor(vec2 fragCoord)
+    { 
+        vec3 camPos = camera;
+        vec3 at = camera + look_dir;
+
+        // TREE:
+        // vec3 camPos = vec3(3., -1.5, time*5.);
+        // vec3 at = camPos+vec3(-1.25,0.1, 1.);
+
+        // mandelbox:
+        // camPos = CameraPath(time / 100.);
+        // at = CameraPath(time/100. + 0.01);
+
+        vec2 uv = normalizeScreenCoords(fragCoord);
+        vec3 rayDir = getCameraRayDir(uv, camPos, at);
+        
+        vec3 col = render(camPos, rayDir);
+        
+        return vec4(col, 1.0);
+    }
+
     void main()
     {
+      gl_FragColor = vec4(0.0);
+      Power = 5.0 + 8.0 * abs(sin(time/4.0));
+      // Power = 8.0;
+      #if AA_QUALITY > 1
+          float AA_size = float(AA_QUALITY);
+          float count = 0.0;
+          for (float aaY = 0.0; aaY < AA_size; aaY++)
+          {
+              for (float aaX = 0.0; aaX < AA_size; aaX++)
+              {
+                gl_FragColor += getSceneColor(gl_FragCoord.xy + vec2(aaX, aaY) / AA_size);
+                  count += 1.0;
+              }
+          }
+          gl_FragColor /= count;
+      #else
+        gl_FragColor = getSceneColor(gl_FragCoord.xy);
+      #endif          
+        gl_FragColor = pow(gl_FragColor, vec4(0.4545)); // Gamma correction (1.0 / 2.2)
+
+
         // vec3 camPos = vec3(0, 0, -5);
         // vec3 camTar = vec3(0, 0, 0);
-        vec3 camPos = camera;
-        vec3 camTar = camera + look_dir;
+        // vec3 camPos = camera;
+        // vec3 camTar = camera + look_dir;
         
-        Power = 3.0 + 5.0 * abs(sin(time/4.0));
+        // Power = 3.0 + 5.0 * abs(sin(time/4.0));
 
-        vec2 uv = normalizeScreenCoords(gl_FragCoord.xy);
-        vec3 rayDir = getCameraRayDir(uv, camPos, camTar);   
-        rayDir.x *= -1.;
-        vec3 col = render(camPos, rayDir);
-    
-        gl_FragColor = vec4(col, 1); // Output to screen
+        // vec2 uv = normalizeScreenCoords(gl_FragCoord.xy);
+        // vec3 rayDir = getCameraRayDir(uv, camPos, camTar);   
+        // rayDir.x *= -1.;
+        // vec3 col = render(camPos, rayDir);
+        // col = pow(col, vec3(0.4545));
+        // gl_FragColor = vec4(col, 1.); // Output to screen
         // vec2 uv = (gl_FragCoord.xy-.5*resolution.xy)/resolution.y;
         // vec3 ro = vec3(0.+time,1. + time,0.); // Ray Origin/ Camera
         // vec3 rd = normalize(vec3(uv.x,uv.y,1));
