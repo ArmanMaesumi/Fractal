@@ -32,6 +32,9 @@ const fragShader = `
     uniform vec3 camera;
     uniform vec3 look_dir;
 
+    uniform int scene_id;
+    uniform int animate;
+
     // Constants
     #define PI 3.1415925359
     #define MAX_STEPS 100
@@ -64,6 +67,11 @@ const fragShader = `
     // ------------------------------------------------|
     // A collection of SDFs:                           |
     // ------------------------------------------------|
+    
+    float SDF_plane( vec3 p, vec3 n, float h ) {
+      // n must be normalized
+      return dot(p,n) + h;
+    }
 
     float SDF_sphere(vec3 p, float r) {
       return length(p) - r;
@@ -191,7 +199,20 @@ const fragShader = `
       // Composing SDFs can be done like so:
       // d = SDF_difference(SDF_mender(pos, 4), SDF_mandelbulb(pos));
 
-      d = SDF_menger(pos, 4);
+      if (scene_id == 0) {
+        d = SDF_menger(pos, 4);
+      } else if (scene_id == 1) {
+        d = SDF_mandelbulb(pos);
+      } else if (scene_id == 2) {
+        d = SDF_mandelbox(pos);
+      } else if (scene_id == 3) {
+        d = SDF_pyramid(pos);
+      } else if (scene_id == 4) {
+        d = SDF_intersect(SDF_menger(pos, 4), SDF_mandelbulb(pos));
+      } else {
+        d = 0.0;
+      }
+      
       return d;
     }
 
@@ -253,7 +274,7 @@ const fragShader = `
             vec3 pos = origin + dir*t;
             vec3 N = SDF_normal(pos);
     
-            vec3 objColor = vec3(0.4, 0.8, 0.1);
+            vec3 objColor = vec3(1., .4, .02);
             // L is vector from surface point to light, N is surface normal. N and L must be normalized!
             float NoL = max(dot(N, L), 0.0);
             vec3 LDirectional = vec3(1.80,1.27,0.99) * NoL;
@@ -288,8 +309,11 @@ const fragShader = `
 
     void main() {
       gl_FragColor = vec4(0.0);
-      Power = 5.0 + 8.0 * abs(sin(time/4.0)); // For animating mandelbulb
-      // Power = 8.0;
+      if (animate > 0) {
+        Power = 5.0 + 8.0 * abs(sin(time/4.0)); // For animating mandelbulb
+      } else {
+        Power = 8.0;
+      }
       #if AA > 1
         float count = 0.0;
         for (float i = 0.0; i < float(AA); i++) {
@@ -307,6 +331,8 @@ const fragShader = `
     }
 `;
 
+var scene_id = 0;
+var animate = 0;
 var clock = new THREE.Clock();
 const scene = new Scene();
 const camera = new PerspectiveCamera();
@@ -370,7 +396,9 @@ var uniforms = {
   time: { type: "f", value: 1.0 },
   resolution: { type: "v2", value: new THREE.Vector2(innerWidth, innerHeight) },
   camera: {type: "v3", value: camera.position},
-  look_dir: {type: "v3", value: new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion)}
+  look_dir: {type: "v3", value: new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion)},
+  scene_id: {type: "int", value: scene_id},
+  animate: {type: "int", value: animate}
 };
 
 var material = new THREE.ShaderMaterial({
@@ -412,5 +440,33 @@ function render() {
   
   uniforms.time.value = clock.getElapsedTime();
   uniforms.look_dir.value = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+  uniforms.scene_id.value = scene_id;
+  uniforms.animate.value = animate;
   renderer.render(scene, camera);
 }
+
+// KEYBOARD CONTROLS
+document.addEventListener("keydown", onDocumentKeyDown, false);
+function onDocumentKeyDown(event) {
+    var keyCode = event.which;
+    if (keyCode == 49) {          // "1" key - Menger sponge scene
+      scene_id = 0;
+    } else if (keyCode == 50) {   // "2" key - Mandelbulb scene
+      scene_id = 1;
+    } else if (keyCode == 51) {   // "3" key - Mandelbox scene
+      scene_id = 2;
+    } else if (keyCode == 52) {   // "4" key - Serpinski scene
+      scene_id = 3;
+    } else if (keyCode == 53) {   // "5" key - Menger intersect Mandelbul scene
+      scene_id = 4;
+    } else if (keyCode == 65) {   // "a" key - Toggle animated fractal
+      if (animate == 0) {
+        animate = 1;
+      } else {
+        animate = 0;
+      }
+    } else if (keyCode == 82) {   // "r" key - Reset camera
+      camera.position.set(0,0,-5);
+      camera.lookAt(new Vector3(0,0,0));
+    }
+};
