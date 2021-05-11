@@ -30,6 +30,7 @@ To interact with the fractal viewer:
                 2 = Mandelbulb
                 3 = Mandelbox
                 4 = Serpinski Pyramid
-                5 = Menger Sponge intersected with Mandelbulb
+                5 = Menger Sponge intersected with Mandelbox
+                6 = Mandelbulb intersected with Mandelbox
     5. Press "a" to toggle the mandelbulb animation mode (this makes the mandelbulb animate)
     6. Press "r" to reset camera position/orientation

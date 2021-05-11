@@ -97,7 +97,6 @@ const fragShader = `
     }
 
     float SDF_menger(vec3 pos, int iters) {
-        // Per https://aka-san.halcy.de/distance_fields_prefinal.pdf
         // https://iquilezles.org/www/articles/menger/menger.htm
       
         float d = SDF_box(pos, vec3(1.0));
@@ -110,6 +109,7 @@ const fragShader = `
           float c = SDF_cross(r) / s;
           d = max(d, c);
         }
+
         return d;
     }
 
@@ -122,21 +122,26 @@ const fragShader = `
           if (r > 1.5) break;
           
           // convert to polar coordinates
-          float theta = acos(z.z/r);
-          float phi = atan(z.y,z.x);
-          dr =  pow( r, Power-1.0)*Power*dr + 1.0;
+          float theta = acos(z.z / r);
+          float phi = atan(z.y, z.x);
+          dr = pow(r, Power - 1.0) * Power * dr + 1.0;
           
           // scale and rotate the point
-          float zr = pow( r,Power);
-          theta = theta*Power;
-          phi = phi*Power;
+          float zr = pow(r, Power);
+          theta = theta * Power;
+          phi = phi * Power;
           
           // convert back to cartesian coordinates
-          z = zr*vec3(sin(theta)*cos(phi), sin(phi)*sin(theta), cos(theta));
+          z = zr * vec3(
+            sin(theta) * cos(phi), 
+            sin(phi) * sin(theta), 
+            cos(theta)
+            );
+
           z+=pos;
         }
 
-        return 0.5*log(r)*r/dr;
+        return 0.5 * log(r) * r / dr;
     }
 
     float SDF_pyramid(vec3 pt) {
@@ -157,11 +162,11 @@ const fragShader = `
     }
 
     #define SCALE 2.8
-    #define MINRAD2 .25
-    float minRad2 = clamp(MINRAD2, 1.0e-9, 1.0);
-    #define scale (vec4(SCALE, SCALE, SCALE, abs(SCALE)) / minRad2)
-    float absScalem1 = abs(SCALE - 1.0);
-    float AbsScaleRaisedTo1mIters = pow(abs(SCALE), float(1-10));
+    #define MIN_RADIUS .25
+
+    float minRadius = clamp(MIN_RADIUS, 1.0e-9, 1.0);
+    float scaleMinusOne = abs(SCALE - 1.0);
+    float scalePow = pow(abs(SCALE), float(1-10));
 
     float SDF_mandelbox(vec3 pos) {
       vec4 p = vec4(pos, 1.0);
@@ -172,10 +177,10 @@ const fragShader = `
 
         p *= clamp(max(0.25 / dot(p.xyz, p.xyz), 0.25), 0.0, 1.0);
 
-        p = p0 + p*scale;
+        p = p0 + p * (vec4(SCALE, SCALE, SCALE, abs(SCALE)) / minRadius);
       }
 
-      return ((length(p.xyz) - absScalem1) / p.w - AbsScaleRaisedTo1mIters);
+      return ((length(p.xyz) - scaleMinusOne) / p.w - scalePow);
     }
 
     // ------------------------------------------------|
@@ -208,7 +213,9 @@ const fragShader = `
       } else if (scene_id == 3) {
         d = SDF_pyramid(pos);
       } else if (scene_id == 4) {
-        d = SDF_intersect(SDF_menger(pos, 4), SDF_mandelbulb(pos));
+        d = SDF_intersect(SDF_menger(pos, 4), SDF_mandelbox(pos));
+      } else if (scene_id == 5) {
+        d = SDF_intersect(SDF_mandelbulb(pos), SDF_mandelbox(pos));
       } else {
         d = 0.0;
       }
@@ -457,8 +464,10 @@ function onDocumentKeyDown(event) {
       scene_id = 2;
     } else if (keyCode == 52) {   // "4" key - Serpinski scene
       scene_id = 3;
-    } else if (keyCode == 53) {   // "5" key - Menger intersect Mandelbul scene
+    } else if (keyCode == 53) {   // "5" key - Menger sponge intersect Mandelbox scene
       scene_id = 4;
+    } else if (keyCode == 54) {   // "6" key - Mandelbulb sponge intersect Mandelbox scene
+      scene_id = 5;
     } else if (keyCode == 65) {   // "a" key - Toggle animated fractal
       if (animate == 0) {
         animate = 1;
