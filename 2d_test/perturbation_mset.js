@@ -60,7 +60,7 @@ function main() {
     varying vec4 pos;
     
     // Fractal parameters (be careful here):
-    #define AA 4            // Don't go too high, on my 1080Ti AA=4 starts lagging 
+    #define AA 1            // Don't go too high, on my 1080Ti AA=4 starts lagging 
     #define iterations 9000 // Can increase if your GPU is good
 
     // Colorizer parameters:
@@ -415,24 +415,9 @@ canvas.addEventListener('mouseup', function (evt) {
 
 function dragAction(deltaX, deltaY) {
     locX -= deltaX/(100 * (1.0/scale));
-    locY -= deltaY/(100 * (1.0/scale));
+    locY += deltaY/(100 * (1.0/scale));
     console.log(locX + ", " + locY);
 }
 
 var lastKnownScrollPosition = 0;
 var ticking = false;
-
-window.addEventListener('scroll', function(e) {
-    console.log("scrolling");
-    // lastKnownScrollPosition = window.scrollY;
-  
-    // if (!ticking) {
-    //   window.requestAnimationFrame(function() {
-    //     doSomething(lastKnownScrollPosition);
-    //     ticking = false;
-    //   });
-  
-    //   ticking = true;
-    // }
-    // console.log(lastKnownScrollPosition);
-});

@@ -34,18 +34,19 @@ const fragShader = `
 
     // Constants
     #define PI 3.1415925359
-    #define TWO_PI 6.2831852
-    #define MAX_STEPS 500
-    #define MAX_DIST 1.
+    #define MAX_STEPS 100
     #define SURFACE_DIST .001
 
-    #define AA_QUALITY 2
+    #define AA_QUALITY 1
 
     float Power;
 
-    // SDF Composition
-    // ---------------
 
+
+    // ------------------------------------------------|
+    // Functions for composing SDFs 
+    // SDF_union, SDF_intersection, SDF_difference
+    
     float SDF_union(float dist_a, float dist_b) {
       return min(dist_a, dist_b);
     }
@@ -57,62 +58,28 @@ const fragShader = `
     float SDF_difference(float dist_a, float dist_b) {
       return max(dist_a, -1.0 * dist_b);
     }
+    // ------------------------------------------------|
 
-    float GetDist(vec3 p)
-    {
-        vec4 s = vec4(0,1,6,1); //Sphere. xyz is position w is radius
-        float sphereDist = length(p-s.xyz) - s.w;
-        float planeDist = p.y;
-        float d = min(sphereDist,planeDist);
-    
-        return d;
-    }
 
-    float DE_infinite_sphere(vec3 pos) {
-        // translate
-        // pos = pos + 1. * vec3(0,-0.5*time,time);
-    
-        float d1 = distance(mod(pos, 2.), vec3(1,1,1))-.54321;
-        
-        return d1;
-    }
-  
-    vec3 getCameraRayDir(vec2 uv, vec3 camPos, vec3 camTarget)
-    {
-        // Calculate camera's "orthonormal basis", i.e. its transform matrix components
-        vec3 camForward = normalize(camTarget - camPos);
-        vec3 camRight = normalize(cross(vec3(0.0, 1.0, 0.0), camForward));
-        vec3 camUp = normalize(cross(camForward, camRight));
-        
-        float fPersp = 2.0;
-        vec3 vDir = normalize(uv.x * camRight + uv.y * camUp + camForward * fPersp);
-    
-        return vDir;
-    }
-    
-    vec2 normalizeScreenCoords(vec2 screenCoord)
-    {
-        vec2 result = 2.0 * (screenCoord/resolution.xy - 0.5);
-        result.x *= resolution.x/resolution.y; // Correct for aspect ratio
-        return result;
+    // ------------------------------------------------|
+    // A collection of SDFs:
+
+    float SDF_sphere(vec3 p, float r) {
+      return length(p) - r;
     }
 
-    float sdSphere(vec3 p, float r)
-    {
-        return length(p) - r;
-    }
-    
-    float vmax(vec3 v) {
-      return max(max(v.x, v.y), v.z);
+    float SDF_infinite_sphere(vec3 pos) {
+      float d1 = distance(mod(pos, 2.), vec3(1,1,1))-.54321;
+      return d1;
     }
 
     float SDF_box(vec3 pos, vec3 s) {
       // s is length of cuboid in each direction
-      return vmax(abs(pos) - s);
+      vec3 v = abs(pos) - s;
+      return max(max(v.x, v.y), v.z);
     }
 
     float SDF_cross(vec3 pos) {
-        /* double inf = 1000000.0; */
         float inf = 3.0;
         float box1 = SDF_box(pos, vec3(inf, 1.0, 1.0));
         float box2 = SDF_box(pos, vec3(1.0, inf, 1.0));
@@ -137,8 +104,7 @@ const fragShader = `
         return d;
     }
 
-    float DE_mandelbulb(vec3 pos) 
-    {
+    float SDF_mandelbulb(vec3 pos) {
         vec3 z = pos;
         float dr = 1.0;
         float r = 0.0;
@@ -160,11 +126,76 @@ const fragShader = `
           z = zr*vec3(sin(theta)*cos(phi), sin(phi)*sin(theta), cos(theta));
           z+=pos;
         }
+
         return 0.5*log(r)*r/dr;
     }
-    
-    float length6( vec3 p )
+
+    float SDF_pyramid(vec3 pt) {
+      float r;
+      float offset = 1.;
+      float S = 2.;
+      pt.y -= 2.5;
+      int n = 0;
+      while(n < 15) {
+          if(pt.x + pt.y < 0.) pt.xy = -pt.yx;
+          if(pt.x + pt.z < 0.) pt.xz = -pt.zx;
+          if(pt.y + pt.z < 0.) pt.zy = -pt.yz;
+          pt = pt * S - offset*(S - 1.0);
+          n++;
+      }
+      
+      return (length(pt) * pow(S, -float(n)));
+    }
+
+
+    #define SCALE 2.8
+    #define MINRAD2 .25
+    float minRad2 = clamp(MINRAD2, 1.0e-9, 1.0);
+    #define scale (vec4(SCALE, SCALE, SCALE, abs(SCALE)) / minRad2)
+    float absScalem1 = abs(SCALE - 1.0);
+    float AbsScaleRaisedTo1mIters = pow(abs(SCALE), float(1-10));
+
+    float DE_mandelbox(vec3 pos) 
     {
+      vec4 p = vec4(pos,1);
+      vec4 p0 = p;  // p.w is the distance estimate
+
+      for (int i = 0; i < 9; i++)
+      {
+        p.xyz = clamp(p.xyz, -1.0, 1.0) * 2.0 - p.xyz;
+
+        float r2 = dot(p.xyz, p.xyz);
+        p *= clamp(max(minRad2/r2, minRad2), 0.0, 1.0);
+
+        // scale, translate
+        p = p*scale + p0;
+      }
+      return ((length(p.xyz) - absScalem1) / p.w - AbsScaleRaisedTo1mIters);
+    }
+    // ------------------------------------------------|
+  
+
+    // ------------------------------------------------|
+    // Ray Marching code:
+    vec3 getCameraRayDir(vec2 uv, vec3 camPos, vec3 camTarget) {
+        // Calculate camera's "orthonormal basis", i.e. its transform matrix components
+        vec3 camForward = normalize(camTarget - camPos);
+        vec3 camRight = normalize(cross(vec3(0.0, 1.0, 0.0), camForward));
+        vec3 camUp = normalize(cross(camForward, camRight));
+        
+        float fPersp = 2.0;
+        vec3 vDir = normalize(uv.x * camRight + uv.y * camUp + camForward * fPersp);
+    
+        return vDir;
+    }
+    
+    vec2 normalizeScreenCoords(vec2 screenCoord) {
+        vec2 result = 2.0 * (screenCoord/resolution.xy - 0.5);
+        result.x *= resolution.x/resolution.y; // Correct for aspect ratio
+        return result;
+    }
+    
+    float length6( vec3 p ) {
       p = p*p*p; p = p*p;
       return pow( p.x + p.y + p.z, 1.0/6.0 );
     }
@@ -200,31 +231,6 @@ const fragShader = `
         }
         return l*pow(scale, -float(iterations))-.15;
     }
-    
-    #define SCALE 2.8
-    #define MINRAD2 .25
-    float minRad2 = clamp(MINRAD2, 1.0e-9, 1.0);
-    #define scale (vec4(SCALE, SCALE, SCALE, abs(SCALE)) / minRad2)
-    float absScalem1 = abs(SCALE - 1.0);
-    float AbsScaleRaisedTo1mIters = pow(abs(SCALE), float(1-10));
-
-    float DE_mandelbox(vec3 pos) 
-    {
-      vec4 p = vec4(pos,1);
-      vec4 p0 = p;  // p.w is the distance estimate
-
-      for (int i = 0; i < 9; i++)
-      {
-        p.xyz = clamp(p.xyz, -1.0, 1.0) * 2.0 - p.xyz;
-
-        float r2 = dot(p.xyz, p.xyz);
-        p *= clamp(max(minRad2/r2, minRad2), 0.0, 1.0);
-
-        // scale, translate
-        p = p*scale + p0;
-      }
-      return ((length(p.xyz) - absScalem1) / p.w - AbsScaleRaisedTo1mIters);
-    }
 
     float DE_sphereWorld( vec3 p, float s )
     {
@@ -248,32 +254,15 @@ const fragShader = `
       return 0.25*abs(p.y)/S;
     }
 
-    float DE_pyramid(vec3 pt) {
-        float r;
-        float offset = 1.;
-        float S = 2.;
-        pt.y -= 2.5;
-        int n = 0;
-        while(n < 15) {
-            if(pt.x + pt.y < 0.) pt.xy = -pt.yx;
-            if(pt.x + pt.z < 0.) pt.xz = -pt.zx;
-            if(pt.y + pt.z < 0.) pt.zy = -pt.yz;
-            pt = pt * S - offset*(S - 1.0);
-            n++;
-        }
-        
-        return (length(pt) * pow(S, -float(n)));
-    }
-
     float sdf(vec3 pos)
     {   
         float t = 0.;
         // float t = sdSphere(pos-vec3(0.0, 0.0, 10.0), 3.0);
         //float t = distance(mod(pos, 2.), vec3(1,1,1))-.25;
-        // float t = DE_mandelbox(pos);
-        // float t = DE_pyramid(pos);
-        // float t = DE_sphereWorld(pos, 1.);
-        // float t = SDF_menger(pos,5);
+        // t = DE_mandelbox(pos);
+        t = DE_pyramid(pos);
+        // t = DE_sphereWorld(pos, 1.);
+        // t = SDF_menger(pos,5);
         //float t = DE_mandelbulb(pos);
         // float t = DE_tree(pos);
         // float t = SDF_difference(
@@ -354,6 +343,8 @@ const fragShader = `
         return col;
     }
 
+    // ------------------------------------------------|
+
     vec3 CameraPath( float t )
     {
       vec3 p = vec3(-.78 + 3. * sin(2.14*t),.05+2.5 * sin(.942*t+1.3),.05 + 3.5 * cos(3.594*t) );
@@ -375,6 +366,7 @@ const fragShader = `
 
         vec2 uv = normalizeScreenCoords(fragCoord);
         vec3 rayDir = getCameraRayDir(uv, camPos, at);
+        // rayDir.x *= -1.;
         
         vec3 col = render(camPos, rayDir);
         
@@ -437,9 +429,9 @@ const scene = new Scene();
 const camera = new PerspectiveCamera();
 const renderer = new WebGLRenderer({antialias: true});
 const seedScene = new SeedScene();
-// const controls = new OrbitControls( camera, renderer.domElement );
+const controls = new OrbitControls( camera, renderer.domElement );
 // const firstPersonControls = new FirstPersonControls(camera, renderer.domElement);
-const flyControls = new FlyControls(camera, renderer.domElement);
+// const flyControls = new FlyControls(camera, renderer.domElement);
 
 // controls.enableDamping = true;
 // scene
@@ -450,13 +442,19 @@ const flyControls = new FlyControls(camera, renderer.domElement);
 camera.position.set(0,0,-5);
 console.log(camera.position);
 camera.lookAt(new Vector3(0,0,0));
-flyControls.movementSpeed = 5;
-flyControls.rollSpeed = Math.PI / 12;
+controls.panSpeed = 0.5;
+controls.rotateSpeed = 0.25;
+controls.zoomSpeed = 0.5;
+// controls.screenSpacePanning = false;
+// controls.target = new THREE.Vector3(0, 0, 1);
+// controls.autoRotate=true;
+// flyControls.movementSpeed = 5;
+// flyControls.rollSpeed = Math.PI / 12;
 // flyControls.autoForward = true;
-flyControls.dragToLook = true;
+// flyControls.dragToLook = true;
 // flyControls.update();
 console.log(camera.position);
-// controls.update();
+controls.update();
 
 // renderer
 renderer.setPixelRatio(window.devicePixelRatio);
@@ -498,7 +496,7 @@ var material = new THREE.ShaderMaterial({
   fragmentShader: fragShader
 });
 
-var mesh = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), material);
+var mesh = new THREE.Mesh(new THREE.PlaneGeometry(10000, 10000), material);
 scene.add(mesh);
 var startTime = Date.now();
 render();
@@ -524,7 +522,8 @@ function render() {
   var elapsedSeconds = elapsedMilliseconds / 1000.;
 
   var delta = clock.getDelta();
-  flyControls.update(delta);
+  // flyControls.update(delta);
+  controls.update();
   renderer.clear();
   requestAnimationFrame(render);
   
