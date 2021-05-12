@@ -3,6 +3,10 @@ Graphics Final Project: Fractal Shaders
 Name:   Arman Maesumi
 UTEID:  am84425
 
+NOTE: If you don't want to fiddle with downloading this repo on your machine, you can try the web apps here (GPU is recommended):
+Mandelbrot viewer: https://armanmaesumi.github.io/2D/index.html
+3D fractal viewer: https://armanmaesumi.github.io/3D/index.html
+
 This codebase is separated into two main parts, the "2D" directory and the "3D" directory. These directories are totally independent from each other.
 
 2D:

@@ -1,0 +1,127 @@
+#include "octane-oslintrin.h"
+
+float sdSphere(vector p)
+{
+    return sqrt(p[0]*p[0] + p[1]*p[1] + p[2]*p[2]) - 1.0;
+}
+
+float sdBox(vector p, vector b)
+{
+  vector d = abs(p) - b;
+  return min(max(d[0],max(d[1],d[2])),0.0) + length(max(d,0.0));
+}
+
+float displace()
+{
+    return 0.001*length(P);
+}
+
+float smax(float a,  float b, float k)
+{
+    return log(exp(k*a) + exp(k*b)) / k;
+}
+
+float smin( float a, float b, float k )
+{
+    float res = exp( -k*a ) + exp( -k*b );
+    return -log( res )/k;
+}
+
+float map(vector p, vector spherePos, float k)
+{
+   float d = sdBox(p,vector(1.0));
+
+   float s = 1.0;
+   for( int m=0; m<8; m++ )
+   {
+      vector a = mod( p*s, 2.0 )-1.0;
+      s *= 3.0;
+      vector r = abs(1.0 - 3.0*abs(a));
+
+      float da = max(r[0],r[1]);
+      float db = max(r[1],r[2]);
+      float dc = max(r[2],r[0]);
+      float c = (smin(da,smin(db,dc, k), k)-1.0)/s;
+
+      d = max(d,c);
+   }
+
+   d = max(d, -sdSphere(P - spherePos));
+
+   return d;
+}
+
+float mandelbulb(vector pos) {
+    int Iterations = 50;
+    float Power = 8.0;
+    float Bailout = 20;
+
+	vector z = P;
+	float dr = 1.0;
+	float r = 0.0;
+
+	for (int i = 0; i < Iterations ; i++) {
+		r = length(z);
+		if (r>Bailout) break;
+
+		// convert to polar coordinates
+		float theta = acos(z[2]/r);
+		float phi = atan2(z[1],z[0]);
+		dr =  pow( r, Power-1.0)*Power*dr + 1.0;
+
+		// scale and rotate the point
+		float zr = pow( r,Power);
+		theta = theta*Power;
+		phi = phi*Power;
+
+		// convert back to cartesian coordinates
+		z = zr*vector(sin(theta)*cos(phi), sin(phi)*sin(theta), cos(theta));
+		z+=pos;
+	}
+
+	return 0.5*log(r)*r/dr;
+}
+
+float mandelbox(vector pos) {
+    float SCALE = 2.8;
+    float MINRAD2 = .25;
+    float minRad2 = clamp(MINRAD2, 1.0e-9, 1.0);
+    vector scale = vector(SCALE, SCALE, SCALE) / minRad2;
+    float absScalem1 = abs(SCALE - 1.0);
+    float AbsScaleRaisedTo1mIters = pow(abs(SCALE), float(1-10));
+
+	vector p = P;
+	vector p0 = p;
+	float dist = 1.;
+    for (int i = 0; i < 9; i++) {
+	    p = clamp(p, -1.0, 1.0) * 2.0 - p;
+        float r2 = dot(p, p);
+        p *= clamp(max(minRad2/r2, minRad2), 0.0, 1.0);
+        dist *= clamp(max(minRad2/r2, minRad2), 0.0, 1.0);
+        // scale, translate
+        p = p*(vector(2.8)/minRad2) + p0;
+        dist = dist*(SCALE/minRad2) + 1.;
+    }
+
+    return ((length(p) - absScalem1) / dist - AbsScaleRaisedTo1mIters);
+}
+
+shader Menger(
+    vector spherePos = vector(1,1,1),
+    vector pos = vector(0,0,0),
+    float  scale = 1,
+    color  tex = 0,
+    float  texscale = 1,
+    float  k = 1,
+    output _sdf c = _SDFDEF)
+{
+
+    //c = smin(sdBox(P, vector(1,1,1)),
+    //         sdBox(P + vector(1,1,1), vector(1,1,1)),
+    //         k) ;//map(P+tex*scale, spherePos);
+    // float m_bulb = mandelbulb(P);
+    float menger = map(P+vector(1.0), spherePos, k);
+    float m_box = mandelbox(P);
+    // c.dist = min(map(P+vector(1.0), spherePos, k), bulb);
+    c.dist = max(menger, m_box);
+}
